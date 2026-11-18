@@ -59,13 +59,29 @@ def meses_siguientes(n: int):
             mes, anio = 1, anio + 1
 
 
+def abrir(page, url: str) -> None:
+    """Abre una página del sitio con paciencia (la página municipal es lenta)."""
+    for intento in range(3):
+        try:
+            page.goto(url, wait_until="domcontentloaded", timeout=60000)
+            return
+        except PWTimeout:
+            if intento == 2:
+                raise RuntimeError(
+                    "La página municipal no respondió después de 3 intentos "
+                    "(puede estar caída o bloqueando servidores fuera de Chile)."
+                )
+            page.wait_for_timeout(5000)
+
+
 def iniciar_sesion(page) -> None:
-    page.goto(URL_LOGIN, wait_until="networkidle")
+    abrir(page, URL_LOGIN)
+    page.wait_for_selector('input[placeholder^="Rut"]')
     page.fill('input[placeholder^="Rut"]', RUT)
     page.fill('input[type="password"]', CLAVE)
     page.press('input[type="password"]', "Enter")
     try:
-        page.wait_for_url("**/pages/**", timeout=30000)
+        page.wait_for_url("**/pages/**", timeout=60000)
     except PWTimeout:
         raise RuntimeError("No se pudo iniciar sesión. Revisa los Secrets RUT y CLAVE.")
 
@@ -73,7 +89,8 @@ def iniciar_sesion(page) -> None:
 def buscar(page, mes: int, anio: int, unidad: str):
     """Hace la búsqueda del formulario. Devuelve cuántas agendas aparecen,
     o None si ese año todavía no aparece en el sitio."""
-    page.goto(URL_RESERVAR, wait_until="networkidle")
+    abrir(page, URL_RESERVAR)
+    page.wait_for_selector(f'#cmbUnidadA option[value="{unidad}"]', state="attached")
     anios = [a.strip() for a in page.locator('[id="cmbAño"] option').all_inner_texts()]
     if str(anio) not in anios:
         return None
@@ -81,8 +98,12 @@ def buscar(page, mes: int, anio: int, unidad: str):
     page.select_option('[id="cmbAño"]', label=str(anio))
     page.select_option("#cmbUnidadA", unidad)
     page.click("#btnConsultar")
-    page.wait_for_load_state("networkidle")
-    page.wait_for_timeout(2000)
+    page.wait_for_function(
+        """() => document.querySelector('tr[id^="grid_listaDeAgendas_"]')
+                 || /No existe informaci/.test(document.body.innerText)""",
+        timeout=45000,
+    )
+    page.wait_for_timeout(1500)
     return page.locator('tr[id^="grid_listaDeAgendas_"]').count()
 
 
@@ -91,9 +112,8 @@ def leer_fechas(page, i: int):
     fila = page.locator('tr[id^="grid_listaDeAgendas_"]').nth(i)
     nombre = " ".join(fila.inner_text().replace("Ver Fechas", "").split())
     fila.get_by_text("Ver Fechas").first.click()
-    page.wait_for_selector("#listaDeFechas .jscroll-added", timeout=30000)
-    page.wait_for_load_state("networkidle")
-    page.wait_for_timeout(1000)
+    page.wait_for_selector("#listaDeFechas .jscroll-added", timeout=45000)
+    page.wait_for_timeout(2000)
     texto = page.locator("#listaDeFechas").inner_text().strip()
     return nombre, texto
 
@@ -103,7 +123,7 @@ def revisar():
     with sync_playwright() as p:
         navegador = p.chromium.launch()
         page = navegador.new_page(locale="es-CL")
-        page.set_default_timeout(30000)
+        page.set_default_timeout(45000)
 
         iniciar_sesion(page)
 
