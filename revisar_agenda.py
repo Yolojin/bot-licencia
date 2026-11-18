@@ -31,6 +31,16 @@ MESES_A_REVISAR = int(os.getenv("MESES_A_REVISAR", "3"))
 NOMBRE_MES = ["", "enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
               "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
 
+# En el servidor de Oracle los datos privados están en un archivo .env junto a este script
+_ENV = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+if os.path.exists(_ENV):
+    with open(_ENV, encoding="utf-8") as _f:
+        for _linea in _f:
+            _linea = _linea.rstrip("\r\n")
+            if "=" in _linea and not _linea.lstrip().startswith("#"):
+                _k, _v = _linea.split("=", 1)
+                os.environ.setdefault(_k.strip(), _v.strip())
+
 RUT = os.environ["RUT"]
 CLAVE = os.environ["CLAVE"]
 TOKEN = os.environ["TELEGRAM_TOKEN"]
@@ -75,6 +85,8 @@ def abrir(page, url: str) -> None:
 
 
 def iniciar_sesion(page) -> None:
+    if "ESCRIBE_" in RUT or "ESCRIBE_" in CLAVE:
+        raise RuntimeError("Faltan tu RUT o tu clave en el servidor (quedó el texto de ejemplo).")
     abrir(page, URL_LOGIN)
     page.wait_for_selector('input[placeholder^="Rut"]')
     page.fill('input[placeholder^="Rut"]', RUT)
